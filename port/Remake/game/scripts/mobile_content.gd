@@ -7,6 +7,128 @@ const ROOT := "user://mobile-content"
 signal extraction_progress(done: int, total: int)
 var pointer_button: int = MOUSE_BUTTON_LEFT
 var ready_for_game := false
+var toolbar: MarginContainer
+var touch_positions: Dictionary = {}
+var touch_main: Node
+var multiple_touches := false
+var touch_button: int = MOUSE_BUTTON_LEFT
+var touch_origin := Vector2.ZERO
+var touch_moved := false
+
+
+func touch_controls_enabled() -> bool:
+	return OS.has_feature("ios") or "--mobile-preview" in OS.get_cmdline_user_args()
+
+
+func _notification(what: int) -> void:
+	if what == MainLoop.NOTIFICATION_APPLICATION_FOCUS_OUT:
+		cancel_touch_gesture()
+
+
+func cancel_touch_gesture() -> void:
+	if is_instance_valid(touch_main):
+		touch_main.set("camera_dragging", false)
+		touch_main.set("right_dragging", false)
+		touch_main.queue_redraw()
+	touch_positions.clear()
+	multiple_touches = false
+	touch_moved = false
+	touch_main = null
+
+
+func _world_touch_point(main: Node, point: Vector2) -> bool:
+	var shell: Node = main.get("game_shell")
+	if shell != null and bool(shell.call("is_overlay_open")):
+		return false
+	if toolbar != null and toolbar.get_global_rect().has_point(point):
+		return false
+	var probe := InputEventMouseButton.new()
+	probe.position = point
+	return not bool(main.call("_pointer_event_over_gameplay_ui", probe))
+
+
+func _touch_centroid() -> Vector2:
+	var center := Vector2.ZERO
+	for point: Vector2 in touch_positions.values():
+		center += point
+	return center / maxf(touch_positions.size(), 1)
+
+
+func _touch_mouse(main: Node, point: Vector2, button: int, pressed: bool) -> void:
+	var event := InputEventMouseButton.new()
+	event.position = point
+	event.button_index = button
+	event.pressed = pressed
+	main.set("pointer_screen_position", point)
+	main.call("_unhandled_input", event)
+
+
+func handle_touch_input(main: Node, event: InputEvent) -> bool:
+	if not touch_controls_enabled():
+		return false
+	if not event is InputEventScreenTouch and not event is InputEventScreenDrag:
+		return false
+	if touch_main != null and touch_main != main:
+		cancel_touch_gesture()
+	if event is InputEventScreenTouch:
+		var touch := event as InputEventScreenTouch
+		if touch.pressed:
+			if touch_positions.is_empty():
+				if not _world_touch_point(main, touch.position):
+					return false
+				touch_main = main
+				touch_origin = touch.position
+				touch_button = pointer_button
+				touch_moved = false
+				multiple_touches = false
+				touch_positions[touch.index] = touch.position
+				# Delay left-click orders until release so a second finger can
+				# join without ever issuing a movement or attack order.
+				if touch_button != MOUSE_BUTTON_LEFT:
+					_touch_mouse(main, touch.position, touch_button, true)
+			else:
+				touch_positions[touch.index] = touch.position
+				multiple_touches = true
+				main.set("camera_dragging", false)
+				main.set("right_dragging", false)
+				main.queue_redraw()
+			return true
+		if not touch_positions.has(touch.index):
+			return false
+		if touch.canceled:
+			multiple_touches = true
+		if not multiple_touches and _world_touch_point(main, touch.position):
+			if touch_button == MOUSE_BUTTON_LEFT:
+				if not touch_moved:
+					_touch_mouse(main, touch.position, touch_button, true)
+					_touch_mouse(main, touch.position, touch_button, false)
+			else:
+				_touch_mouse(main, touch.position, touch_button, false)
+		touch_positions.erase(touch.index)
+		if touch_positions.is_empty():
+			cancel_touch_gesture()
+		return true
+	var drag := event as InputEventScreenDrag
+	if not touch_positions.has(drag.index):
+		return false
+	var previous_center := _touch_centroid()
+	var previous_point: Vector2 = touch_positions[drag.index]
+	touch_positions[drag.index] = drag.position
+	if touch_origin.distance_to(drag.position) > 12.0:
+		touch_moved = true
+	if multiple_touches:
+		if touch_positions.size() >= 2 and _world_touch_point(main, drag.position):
+			var camera := main.get("level_camera") as Camera2D
+			if camera != null:
+				camera.position -= (_touch_centroid() - previous_center) / camera.zoom
+				main.call("clamp_level_camera")
+		return true
+	if touch_button != MOUSE_BUTTON_LEFT:
+		var motion := InputEventMouseMotion.new()
+		motion.position = drag.position
+		motion.relative = drag.position - previous_point
+		main.call("_unhandled_input", motion)
+	return true
 
 
 func _ready() -> void:
@@ -80,6 +202,7 @@ func _prepare_content() -> bool:
 
 func _create_toolbar() -> void:
 	var margin := MarginContainer.new()
+	toolbar = margin
 	margin.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
 	margin.offset_top = 24
 	margin.offset_left = 24

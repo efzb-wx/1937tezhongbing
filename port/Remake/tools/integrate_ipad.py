@@ -36,6 +36,28 @@ for name in ("main.gd", "imported_level_data.gd", "level_view.gd", "legacy_media
         assert anchor in text
         text = text.replace(anchor, anchor + '\t# Touch devices have no persistent edge pointer.\n\tif OS.has_feature("ios"):\n\t\treturn Vector2.ZERO\n', 1)
     text = text.replace('touch_mouse.button_index = MobileContent.pointer_button', 'touch_mouse.button_index = int(get_node("/root/MobileContent").get("pointer_button"))')
+    if name == "main.gd":
+        text = text.replace(
+            "level_camera.zoom = Vector2.ONE * LEVEL_VIEW.MAX_ZOOM",
+            "level_camera.zoom = Vector2.ONE * 1.28",
+        )
+        if "# Route native multitouch before legacy mouse commands." not in text:
+            anchor = "func _input(event: InputEvent) -> void:\n"
+            text = text.replace(anchor, anchor + '''\t# Route native multitouch before legacy mouse commands.
+\tvar mobile_input := get_node_or_null("/root/MobileContent")
+\tif mobile_input != null and bool(mobile_input.call("handle_touch_input", self, event)):
+\t\tget_viewport().set_input_as_handled()
+\t\treturn
+''', 1)
+        if "# Native touches own world commands; mouse emulation remains for GUI." not in text:
+            anchor = "func _unhandled_input(event: InputEvent) -> void:\n"
+            text = text.replace(anchor, anchor + '''\t# Native touches own world commands; mouse emulation remains for GUI.
+\tif event is InputEventMouse and event.device == InputEvent.DEVICE_ID_EMULATION:
+\t\tvar mobile_input := get_node_or_null("/root/MobileContent")
+\t\tif mobile_input != null and bool(mobile_input.call("touch_controls_enabled")):
+\t\t\tget_viewport().set_input_as_handled()
+\t\t\treturn
+''', 1)
     path.write_text(text, encoding="utf-8", newline="\n")
 
 path = game / "project.godot"
