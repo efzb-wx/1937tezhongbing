@@ -1,5 +1,6 @@
 """Idempotently integrate mobile content paths and touch pointer modes."""
 from pathlib import Path
+import re
 
 game = Path(__file__).resolve().parents[1] / "game"
 # A source-native SVG keeps the iOS icon input reproducible and independent of
@@ -48,6 +49,13 @@ if "[input_devices]" not in text:
     text += '\n[input_devices]\n\npointing/emulate_mouse_from_touch=true\n'
 # Scale the virtual canvas to preserve usable touch target sizes on Retina iPads.
 text = text.replace('window/stretch/mode="disabled"', 'window/stretch/mode="canvas_items"\nwindow/stretch/aspect="expand"')
+# Godot SCREEN_SENSOR_LANDSCAPE = 4. Value 1 is PORTRAIT.
+# This also generates landscape-only native iPad supported orientations.
+text, orientation_count = re.subn(
+    r"(?m)^window/handheld/orientation=.*$", "window/handheld/orientation=4", text
+)
+if orientation_count == 0:
+    text = text.replace("[display]", "[display]\n\nwindow/handheld/orientation=4", 1)
 # iOS export validates the project import setting, independently of the
 # texture_format/etc2_astc export-preset flag. macOS does not enable this
 # automatically, so the exporter otherwise rejects the preset with no message.

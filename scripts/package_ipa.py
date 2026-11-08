@@ -19,6 +19,14 @@ if "arm64" not in architectures.split():
     raise RuntimeError("Application is not built for ARM64 devices")
 if 2 not in info.get("UIDeviceFamily", []):
     raise RuntimeError("Application does not support iPad")
+landscape = {"UIInterfaceOrientationLandscapeLeft", "UIInterfaceOrientationLandscapeRight"}
+for key in ("UISupportedInterfaceOrientations", "UISupportedInterfaceOrientations~ipad"):
+    orientations = set(info.get(key, []))
+    if orientations != landscape:
+        raise RuntimeError(f"Expected landscape-only orientations: {key}={orientations}")
+if not info.get("UIRequiresFullScreen", False):
+    raise RuntimeError("The landscape-only game must request full-screen presentation")
+print("Verified native iPad landscape-only orientation and full-screen configuration")
 if not list(app.rglob("*.pck")):
     raise RuntimeError("Godot content PCK is missing")
 output.mkdir(parents=True, exist_ok=True)
