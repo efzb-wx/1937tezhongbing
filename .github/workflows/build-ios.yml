@@ -10,8 +10,16 @@ jobs:
   ios:
     runs-on: macos-15
     timeout-minutes: 45
+    env:
+      # Godot 4.7 templates reference iOS 26 SDK symbols unavailable in the
+      # runner's default Xcode 16.4 toolchain.
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
+      - name: Verify Xcode and iOS SDK
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
       - name: Prepare pinned game source, content and Godot
         run: python3 scripts/bootstrap.py
       - name: Import and verify scripts
