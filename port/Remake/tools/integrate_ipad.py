@@ -32,6 +32,12 @@ if "[input_devices]" not in text:
     text += '\n[input_devices]\n\npointing/emulate_mouse_from_touch=true\n'
 # Scale the virtual canvas to preserve usable touch target sizes on Retina iPads.
 text = text.replace('window/stretch/mode="disabled"', 'window/stretch/mode="canvas_items"\nwindow/stretch/aspect="expand"')
+# iOS export validates the project import setting, independently of the
+# texture_format/etc2_astc export-preset flag. macOS does not enable this
+# automatically, so the exporter otherwise rejects the preset with no message.
+if "textures/vram_compression/import_etc2_astc=" not in text:
+    assert "[rendering]" in text
+    text = text.replace("[rendering]", "[rendering]\n\ntextures/vram_compression/import_etc2_astc=true", 1)
 path.write_text(text, encoding="utf-8", newline="\n")
 
 path = game / "export_presets.cfg"
