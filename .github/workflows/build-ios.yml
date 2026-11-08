@@ -1,0 +1,55 @@
+name: Build iPad IPA (unsigned)
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, ipad-build]
+    paths: ["port/**", "scripts/**", ".github/workflows/build-ios.yml"]
+permissions:
+  contents: read
+jobs:
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare pinned game source, content and Godot
+        run: python3 scripts/bootstrap.py
+      - name: Import and verify scripts
+        run: |
+          set -euo pipefail
+          engine/Godot.app/Contents/MacOS/Godot --headless --path source/Remake/game --editor --import --quit 2>&1 | tee import.log
+          if grep -Eq 'SCRIPT ERROR|Parse Error|Compile Error' import.log; then exit 1; fi
+      - name: Verify content and touch input on macOS
+        run: |
+          set -euo pipefail
+          engine/Godot.app/Contents/MacOS/Godot --headless --path source/Remake/game --script res://tests/mobile_port_test.gd -- --mobile-preview --level=m000 --skip-briefing 2>&1 | tee mobile-test.log
+      - name: Export Xcode project
+        run: |
+          set -euo pipefail
+          mkdir -p output/xcode
+          engine/Godot.app/Contents/MacOS/Godot --headless --path source/Remake/game --export-release iOS "$PWD/output/xcode/1937iPad.ipa" 2>&1 | tee export.log
+      - name: Compile ARM64 iPad application
+        run: |
+          set -euo pipefail
+          xcodebuild -project output/xcode/1937iPad.xcodeproj -scheme 1937iPad -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$PWD/output/DerivedData" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' DEVELOPMENT_TEAM='' build 2>&1 | tee xcodebuild.log
+          python3 scripts/package_ipa.py output/DerivedData/Build/Products/Release-iphoneos output
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: 1937-iPad-unsigned
+          path: |
+            output/1937-iPad-unsigned.ipa
+            output/1937-iPad-unsigned.ipa.sha256
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-logs
+          path: |
+            import.log
+            mobile-test.log
+            export.log
+            xcodebuild.log
+          if-no-files-found: ignore
