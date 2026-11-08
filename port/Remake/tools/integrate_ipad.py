@@ -2,6 +2,20 @@
 from pathlib import Path
 
 game = Path(__file__).resolve().parents[1] / "game"
+# A source-native SVG keeps the iOS icon input reproducible and independent of
+# desktop ICO files. Godot resizes this master icon for every required slot.
+icon = game / "mobile_icon.svg"
+icon.write_text('''<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<rect width="1024" height="1024" fill="#20392f"/>
+<rect x="54" y="54" width="916" height="916" rx="48" fill="none" stroke="#cbbd8b" stroke-width="12"/>
+<path d="M512 156 548 265 662 265 570 332 605 440 512 373 419 440 454 332 362 265 476 265Z" fill="#cbbd8b"/>
+<g fill="none" stroke="#eee5c8" stroke-width="25" stroke-linecap="square" stroke-linejoin="miter">
+<path d="M245 548V788"/>
+<path d="M302 548H412V788H302M302 548V668H412"/>
+<path d="M475 548H585V788H475M475 668H585"/>
+<path d="M648 548H778L694 788"/>
+</g><path d="M290 863H734" stroke="#cbbd8b" stroke-width="12"/>
+</svg>''', encoding="utf-8")
 for name in ("main.gd", "imported_level_data.gd", "level_view.gd", "legacy_media_catalog.gd"):
     path = game / "scripts" / name
     text = path.read_text(encoding="utf-8")
@@ -25,6 +39,8 @@ for name in ("main.gd", "imported_level_data.gd", "level_view.gd", "legacy_media
 
 path = game / "project.godot"
 text = path.read_text(encoding="utf-8")
+if "config/icon=" not in text:
+    text = text.replace("[application]", '[application]\n\nconfig/icon="res://mobile_icon.svg"', 1)
 text = text.replace('run/main_scene="res://scenes/main.tscn"', 'run/main_scene="res://scenes/mobile_boot.tscn"')
 if "[autoload]" not in text:
     text += '\n[autoload]\n\nMobileContent="*res://scripts/mobile_content.gd"\n'
