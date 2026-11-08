@@ -2,7 +2,7 @@ name: Build iPad IPA (unsigned)
 on:
   workflow_dispatch:
   push:
-    branches: [main, ipad-build]
+    branches: [main, ipad-build, ios]
     paths: ["port/**", "scripts/**", ".github/workflows/build-ios.yml"]
 permissions:
   contents: read
