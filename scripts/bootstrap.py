@@ -21,7 +21,10 @@ def extract_portable_assets(archive_path, destination):
             target = (destination / normalized).resolve()
             if not target.is_relative_to(destination):
                 raise RuntimeError(f"Unsafe portable archive entry: {entry.filename}")
-            if entry.is_dir():
+            # The Windows-produced release has an explicit sprite-frames/
+            # entry with no external directory attributes. Preserve the ZIP
+            # trailing-slash directory convention regardless of host/runtime.
+            if normalized.endswith("/") or entry.is_dir():
                 target.mkdir(parents=True, exist_ok=True)
             else:
                 target.parent.mkdir(parents=True, exist_ok=True)
