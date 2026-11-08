@@ -29,6 +29,7 @@ func _run() -> void:
 	_expect(main.terrain_loaded, "First mission terrain loads")
 	_expect(not main.units.is_empty(), "First mission player units load")
 	_expect(is_equal_approx(main.level_camera.zoom.x, 1.28), "New missions start at 128 percent zoom")
+	_expect(mobile.speed_percent == 60 and is_equal_approx(SquadUnit.mobile_movement_scale, 0.6), "New missions start at 60 percent movement speed")
 	mobile.pointer_button = MOUSE_BUTTON_MIDDLE
 	_screen_touch(5, Vector2(640, 260), true)
 	_expect(main.camera_dragging, "Touch pan mode begins camera dragging")
@@ -79,6 +80,19 @@ func _run() -> void:
 	_screen_touch(3, unit_screen, false)
 	_expect(main.selected_units.size() == 1, "A normal one-finger tap still selects a player after a two-finger gesture")
 	main.clear_selection()
+	var selection_origin := unit_screen - Vector2(50, 50)
+	var selection_end := unit_screen + Vector2(50, 50)
+	_screen_touch(8, selection_origin, true)
+	await create_timer(0.8, true, false, true).timeout
+	_expect(not main.right_dragging, "Holding less than one second does not begin a selection box")
+	await create_timer(0.25, true, false, true).timeout
+	_expect(main.right_dragging and mobile.long_press_selection, "One-second stationary hold enters selection mode")
+	_screen_drag(8, selection_end)
+	_screen_touch(8, selection_end, false)
+	_expect(main.selected_units.size() == 1 and not main.right_dragging, "Long-press drag and release box-selects the player")
+	_expect(mobile.pointer_button == MOUSE_BUTTON_LEFT, "Long-press selection does not change the toolbar mode")
+	_validate_movement_speed(mobile)
+	main.clear_selection()
 	mobile._send_key(KEY_F4, true)
 	mobile._send_key(KEY_F4, false)
 	await process_frame
@@ -87,10 +101,13 @@ func _run() -> void:
 	mobile._zoom(MOUSE_BUTTON_WHEEL_DOWN)
 	await process_frame
 	_expect(main.level_camera.zoom.x < previous_zoom, "Touch zoom button changes the world camera zoom")
+	mobile.set_speed_percent(30)
+	main.switch_level(0, false, false)
+	_expect(mobile.speed_percent == 60, "Reopening a mission resets movement speed to 60 percent")
 	main.queue_free()
 	await process_frame
 	if failures.is_empty():
-		print("Mobile port tests passed: 12 missions, content integrity, 128% initial zoom, native two-finger pan with no unintended orders, single tap/pan/selection, toolbar selection and zoom")
+		print("Mobile port tests passed: 12 missions, 128% zoom, two-finger pan, one-second long-press selection, 30%-100% movement speeds and buttons, 60% mission default, toolbar controls")
 		quit(0)
 	else:
 		for failure: String in failures:
@@ -105,6 +122,47 @@ func _touch_mouse(pressed: bool) -> InputEventMouseButton:
 	event.position = Vector2(640, 260)
 	event.pressed = pressed
 	return event
+
+
+func _validate_movement_speed(mobile: Node) -> void:
+	mobile.set_speed_percent(100)
+	mobile.speed_minus.pressed.emit()
+	_expect(mobile.speed_percent == 90, "Speed minus reduces speed by ten percentage points")
+	for step: int in range(12):
+		mobile.change_speed(-10)
+	_expect(mobile.speed_percent == 30 and mobile.speed_minus.disabled, "Movement speed is bounded at 30 percent")
+	for step: int in range(12):
+		mobile.speed_plus.pressed.emit()
+	_expect(mobile.speed_percent == 100 and mobile.speed_plus.disabled, "Speed plus advances by ten points and is bounded at 100 percent")
+	var scripts: Array[Script] = [
+		preload("res://scripts/squad_unit.gd"),
+		preload("res://scripts/enemy_unit.gd"),
+		preload("res://scripts/escort_unit.gd"),
+		preload("res://scripts/ambient_unit.gd"),
+	]
+	for actor_script: Script in scripts:
+		for component_motion: bool in [false, true]:
+			for percentage: int in [30, 60, 100]:
+				mobile.set_speed_percent(percentage)
+				var actor = actor_script.new()
+				actor.configure("movement fixture", Color.WHITE, Vector2.ZERO)
+				actor.auto_combat_enabled = false
+				actor.legacy_actor_scheduler_enabled = false
+				actor.hurt_remaining = 1.0
+				actor.move_speed = 100.0
+				actor.is_running = false
+				actor.uses_original_component_movement = component_motion
+				actor.walk_step_components = Vector2.ONE
+				actor.movement_path = PackedVector2Array([Vector2(1000, 1000) if component_motion else Vector2(1000, 0)])
+				actor.movement_path_index = 0
+				actor.target_position = actor.movement_path[0]
+				actor.attack_cooldown_remaining = 2.0
+				actor.simulate_tick(0.1, true)
+				_expect(is_equal_approx(actor.position.length(), percentage / 10.0), "Player/enemy/escort/animal scalar and original-component motion respect the selected speed: %s %s %d (observed %f)" % [actor_script.resource_path, component_motion, percentage, actor.position.length()])
+				_expect(is_equal_approx(actor.attack_cooldown_remaining, 1.9), "Movement speed leaves combat timing unchanged")
+				actor.free()
+	_expect(is_equal_approx(Engine.time_scale, 1.0), "Movement speed leaves global game time unchanged")
+	mobile.set_speed_percent(60)
 
 
 func _screen_touch(index: int, point: Vector2, pressed: bool) -> void:

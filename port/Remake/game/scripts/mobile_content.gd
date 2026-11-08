@@ -14,6 +14,51 @@ var multiple_touches := false
 var touch_button: int = MOUSE_BUTTON_LEFT
 var touch_origin := Vector2.ZERO
 var touch_moved := false
+var touch_started_usec: int = 0
+var long_press_selection := false
+var speed_percent: int = 100
+var speed_label: Label
+var speed_minus: Button
+var speed_plus: Button
+const LONG_PRESS_USEC := 1000000
+
+
+func set_speed_percent(value: int) -> void:
+	speed_percent = clampi(value, 30, 100)
+	SquadUnit.mobile_movement_scale = speed_percent / 100.0
+	if speed_label != null:
+		speed_label.text = "移动速度 %d%%" % speed_percent
+	if speed_minus != null:
+		speed_minus.disabled = speed_percent <= 30
+	if speed_plus != null:
+		speed_plus.disabled = speed_percent >= 100
+
+
+func change_speed(step: int) -> void:
+	set_speed_percent(speed_percent + step)
+
+
+func reset_for_level() -> void:
+	cancel_touch_gesture()
+	set_speed_percent(60)
+
+
+func _process(_delta: float) -> void:
+	_activate_long_press()
+
+
+func _activate_long_press() -> void:
+	if (
+		not is_instance_valid(touch_main) or multiple_touches
+		or touch_positions.size() != 1 or touch_button != MOUSE_BUTTON_LEFT
+		or touch_moved or Time.get_ticks_usec() - touch_started_usec < LONG_PRESS_USEC
+	):
+		return
+	if not _world_touch_point(touch_main, touch_origin):
+		return
+	touch_button = MOUSE_BUTTON_RIGHT
+	long_press_selection = true
+	_touch_mouse(touch_main, touch_origin, MOUSE_BUTTON_RIGHT, true)
 
 
 func touch_controls_enabled() -> bool:
@@ -33,6 +78,7 @@ func cancel_touch_gesture() -> void:
 	touch_positions.clear()
 	multiple_touches = false
 	touch_moved = false
+	long_press_selection = false
 	touch_main = null
 
 
@@ -80,6 +126,8 @@ func handle_touch_input(main: Node, event: InputEvent) -> bool:
 				touch_origin = touch.position
 				touch_button = pointer_button
 				touch_moved = false
+				touch_started_usec = Time.get_ticks_usec()
+				long_press_selection = false
 				multiple_touches = false
 				touch_positions[touch.index] = touch.position
 				# Delay left-click orders until release so a second finger can
@@ -95,6 +143,7 @@ func handle_touch_input(main: Node, event: InputEvent) -> bool:
 			return true
 		if not touch_positions.has(touch.index):
 			return false
+		_activate_long_press()
 		if touch.canceled:
 			multiple_touches = true
 		if not multiple_touches and _world_touch_point(main, touch.position):
@@ -111,6 +160,7 @@ func handle_touch_input(main: Node, event: InputEvent) -> bool:
 	var drag := event as InputEventScreenDrag
 	if not touch_positions.has(drag.index):
 		return false
+	_activate_long_press()
 	var previous_center := _touch_centroid()
 	var previous_point: Vector2 = touch_positions[drag.index]
 	touch_positions[drag.index] = drag.position
@@ -245,6 +295,21 @@ func _create_toolbar() -> void:
 	_add_key(extra, "视线", KEY_S)
 	_add_key(extra, "掩埋", KEY_B)
 	_add_key(extra, "帮助", KEY_F1)
+	speed_label = Label.new()
+	extra.add_child(speed_label)
+	speed_minus = _add_speed_button(extra, "速度−", -10)
+	speed_plus = _add_speed_button(extra, "速度＋", 10)
+	set_speed_percent(speed_percent)
+
+
+func _add_speed_button(row: HBoxContainer, label: String, step: int) -> Button:
+	var button := Button.new()
+	button.text = label
+	button.focus_mode = Control.FOCUS_NONE
+	button.custom_minimum_size = Vector2(76, 48)
+	button.pressed.connect(change_speed.bind(step))
+	row.add_child(button)
+	return button
 
 
 func _add_key(row: HBoxContainer, label: String, keycode: int) -> void:

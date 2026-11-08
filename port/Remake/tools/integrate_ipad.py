@@ -17,7 +17,7 @@ icon.write_text('''<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="
 <path d="M648 548H778L694 788"/>
 </g><path d="M290 863H734" stroke="#cbbd8b" stroke-width="12"/>
 </svg>''', encoding="utf-8")
-for name in ("main.gd", "imported_level_data.gd", "level_view.gd", "legacy_media_catalog.gd"):
+for name in ("main.gd", "imported_level_data.gd", "level_view.gd", "legacy_media_catalog.gd", "squad_unit.gd"):
     path = game / "scripts" / name
     text = path.read_text(encoding="utf-8")
     text = text.replace("ProjectSettings.globalize_path(", 'preload("res://scripts/mobile_content.gd").resolve(')
@@ -37,6 +37,14 @@ for name in ("main.gd", "imported_level_data.gd", "level_view.gd", "legacy_media
         text = text.replace(anchor, anchor + '\t# Touch devices have no persistent edge pointer.\n\tif OS.has_feature("ios"):\n\t\treturn Vector2.ZERO\n', 1)
     text = text.replace('touch_mouse.button_index = MobileContent.pointer_button', 'touch_mouse.button_index = int(get_node("/root/MobileContent").get("pointer_button"))')
     if name == "main.gd":
+        if "# Reset mobile controls for each opened mission." not in text:
+            anchor = "\tvar level_load_started_usec := Time.get_ticks_usec()"
+            assert anchor in text
+            text = text.replace(anchor, '''\t# Reset mobile controls for each opened mission.
+\tvar mobile_controls := get_node_or_null("/root/MobileContent")
+\tif mobile_controls != null and bool(mobile_controls.call("touch_controls_enabled")):
+\t\tmobile_controls.call("reset_for_level")
+''' + anchor, 1)
         text = text.replace(
             "level_camera.zoom = Vector2.ONE * LEVEL_VIEW.MAX_ZOOM",
             "level_camera.zoom = Vector2.ONE * 1.28",
@@ -58,6 +66,17 @@ for name in ("main.gd", "imported_level_data.gd", "level_view.gd", "legacy_media
 \t\t\tget_viewport().set_input_as_handled()
 \t\t\treturn
 ''', 1)
+    if name == "squad_unit.gd" and "static var mobile_movement_scale" not in text:
+        text = text.replace("extends Node2D", "extends Node2D\n\nstatic var mobile_movement_scale: float = 1.0", 1)
+        for before, after in (
+            ("var travel := maxf(move_speed, 0.0) * fixed_delta", "var travel := maxf(move_speed, 0.0) * fixed_delta * mobile_movement_scale"),
+            ("var component_velocity := original_component_velocity()", "var component_velocity := original_component_velocity() * mobile_movement_scale"),
+            ("var remaining_distance := maxf(move_speed, 0.0) * safe_delta", "var remaining_distance := maxf(move_speed, 0.0) * safe_delta * mobile_movement_scale"),
+            ("_advance_movement_presentation(safe_delta,", "_advance_movement_presentation(safe_delta * mobile_movement_scale,"),
+            ("_advance_movement_progress_watchdog(safe_delta,", "_advance_movement_progress_watchdog(safe_delta * mobile_movement_scale,"),
+        ):
+            assert before in text, before
+            text = text.replace(before, after)
     path.write_text(text, encoding="utf-8", newline="\n")
 
 path = game / "project.godot"
