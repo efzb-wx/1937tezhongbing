@@ -7,6 +7,32 @@ import subprocess
 import urllib.request
 import zipfile
 
+
+def extract_portable_assets(archive_path, destination):
+    """Locate the asset root from ZIP entries, not platform glob semantics."""
+    destination = Path(destination).resolve()
+    with zipfile.ZipFile(archive_path) as archive:
+        manifests = [name for name in archive.namelist()
+                     if name.replace("\\", "/").endswith("LocalAssets/content-manifest.json")]
+        if len(manifests) != 1:
+            raise RuntimeError(f"Expected one content manifest in ZIP, found {manifests!r}")
+        for entry in archive.infolist():
+            normalized = entry.filename.replace("\\", "/")
+            target = (destination / normalized).resolve()
+            if not target.is_relative_to(destination):
+                raise RuntimeError(f"Unsafe portable archive entry: {entry.filename}")
+            if entry.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(entry) as source, target.open("wb") as output:
+                    shutil.copyfileobj(source, output)
+        manifest = destination / manifests[0].replace("\\", "/")
+    if not manifest.is_file():
+        raise RuntimeError(f"Manifest missing after extraction: {manifest}")
+    print("Located portable assets:", manifest.parent, flush=True)
+    return manifest.parent
+
 COMMIT = "7ddb75fa4b3425d6f1f5327a11dff728e4fbf56c"
 GODOT = "4.7.2"
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,13 +54,9 @@ download("https://github.com/bigsinger/1937tezhongbing/releases/download/archive
 expected_hash = Path("portable.zip.sha256").read_text(encoding="utf-8-sig").split()[0].lower()
 if hashlib.sha256(Path("portable.zip").read_bytes()).hexdigest() != expected_hash:
     raise RuntimeError("Published portable release checksum mismatch")
-with zipfile.ZipFile("portable.zip") as archive:
-    archive.extractall("portable")
-manifests = list(Path("portable").rglob("LocalAssets/content-manifest.json"))
-if len(manifests) != 1:
-    raise RuntimeError("Cannot uniquely identify portable LocalAssets")
+assets = extract_portable_assets("portable.zip", "portable")
 subprocess.run(["python3", "source/Remake/tools/integrate_ipad.py"], check=True)
-subprocess.run(["python3", "source/Remake/tools/prepare_ipad.py", "--assets", str(manifests[0].parent.resolve())], check=True)
+subprocess.run(["python3", "source/Remake/tools/prepare_ipad.py", "--assets", str(assets)], check=True)
 base = f"https://github.com/godotengine/godot/releases/download/{GODOT}-stable/"
 download(base + f"Godot_v{GODOT}-stable_macos.universal.zip", "engine.zip")
 Path("engine").mkdir(exist_ok=True)
